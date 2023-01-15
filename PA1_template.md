@@ -1,8 +1,9 @@
 ---
-title: "Reproducible Research: Peer Assessment 1"
-output: 
+title: 'Reproducible Research: Peer Assessment 1'
+output:
   html_document:
-    keep_md: true
+    keep_md: yes
+  pdf_document: default
 ---
 
 ## Loading required packages
@@ -112,25 +113,8 @@ Stepsdf contains three columns:
 The interval column is used to extract the time, and this is combined with the date to create a datetime value.
 
 ```r
-stepsdf %>%
+stepsdf <- stepsdf %>%
     mutate(datetime = date + hours((interval - (interval %% 100)) / 100) + minutes(interval %% 100))
-```
-
-```
-## # A tibble: 17,568 × 4
-##    steps date       interval datetime           
-##    <dbl> <date>        <dbl> <dttm>             
-##  1    NA 2012-10-01        0 2012-10-01 00:00:00
-##  2    NA 2012-10-01        5 2012-10-01 00:05:00
-##  3    NA 2012-10-01       10 2012-10-01 00:10:00
-##  4    NA 2012-10-01       15 2012-10-01 00:15:00
-##  5    NA 2012-10-01       20 2012-10-01 00:20:00
-##  6    NA 2012-10-01       25 2012-10-01 00:25:00
-##  7    NA 2012-10-01       30 2012-10-01 00:30:00
-##  8    NA 2012-10-01       35 2012-10-01 00:35:00
-##  9    NA 2012-10-01       40 2012-10-01 00:40:00
-## 10    NA 2012-10-01       45 2012-10-01 00:45:00
-## # … with 17,558 more rows
 ```
 
 ## What is mean total number of steps taken per day?
@@ -145,7 +129,12 @@ Now we will use ggplot to create a histogram:
 
 ```r
 g <- ggplot(steps_per_day, aes(x = Total_steps))
-g + geom_histogram(binwidth = 1000, color = 'black', fill = 'white') + labs(title = 'Total number of steps per day', x = 'Number of steps taken', y = 'Frequency')
+g + geom_histogram(binwidth = 1000, color = 'black', fill = 'white') + scale_y_discrete(limits = seq(0, 10)) + labs(title = 'Total number of steps per day', x = 'Number of steps taken', y = 'Frequency')
+```
+
+```
+## Warning: Continuous limits supplied to discrete scale.
+## ℹ Did you mean `limits = factor(...)` or `scale_*_continuous()`?
 ```
 
 ```
@@ -174,10 +163,127 @@ cat('Median: ', median(steps_per_day$Total_steps, na.rm = TRUE))
 
 ## What is the average daily activity pattern?
 
+```r
+steps_per_interval <- aggregate(stepsdf$steps, by=list(stepsdf$interval), mean, na.rm = TRUE)
+names(steps_per_interval) <- c("Interval", "Avg_steps")
+steps_per_interval <- steps_per_interval %>%
+    mutate(time = strptime((Interval - (Interval %% 100)) / 100, format = "%H") + (Interval %% 100 * 60))
 
+g <- ggplot(steps_per_interval, aes(x = time, y = Avg_steps))
+g + geom_line() + labs(title = 'Average number of steps by time of day', x = 'Time', y = 'Average number of steps') + scale_x_datetime(date_labels = "%H:%M")
+```
+
+![](PA1_template_files/figure-html/unnamed-chunk-7-1.png)<!-- -->
+  
 
 ## Imputing missing values
+First we must identify how many missing values are present in the dataset:
 
+```r
+str(stepsdf) # This indicates that date and interval are system/device generated, so they are unlikely to be missing 
+```
 
+```
+## tibble [17,568 × 4] (S3: tbl_df/tbl/data.frame)
+##  $ steps   : num [1:17568] NA NA NA NA NA NA NA NA NA NA ...
+##  $ date    : Date[1:17568], format: "2012-10-01" "2012-10-01" ...
+##  $ interval: num [1:17568] 0 5 10 15 20 25 30 35 40 45 ...
+##  $ datetime: POSIXct[1:17568], format: "2012-10-01 00:00:00" "2012-10-01 00:05:00" ...
+```
 
+```r
+table(is.na(stepsdf)) # 2304 missing values in 50400 total data points
+```
+
+```
+## 
+## FALSE  TRUE 
+## 67968  2304
+```
+
+```r
+table(is.na(stepsdf$steps)) # This tells us that there are indeed 2304 missing values in 'steps'.
+```
+
+```
+## 
+## FALSE  TRUE 
+## 15264  2304
+```
+From the average daily activity pattern, we can see that there are definitely differences in what the best replacement is. We will replace NA's with the rounded average number of steps in the same interval. So, for example, if there is a measurement missing at the interval 835, we would replace it with 206. 
+To achieve this, an extra column is added to stepsdf which repeats the average number of steps calculated in the previous part. This works because the intervals are ordered and repeat consistently.  
+
+```r
+stepsdf$avg_steps_this_interval <- rep(round(steps_per_interval$Avg_steps), times = nrow(stepsdf) / nrow(steps_per_interval)) 
+```
+Now all that is left to do is replace the NA's in *steps* with the (rounded) value in *avg_steps_this_interval*, and store this in a new dataframe (stepsdf2).
+
+```r
+stepsdf2 <- stepsdf %>%
+    mutate(steps = coalesce(steps, avg_steps_this_interval))
+```
+### Analysis of the effect of imputing missing data values
+This is similar to the previous section [What is mean total number of steps taken per day?]
+*Create aggregate column for sum of steps per day*  
+
+```r
+steps_per_day2 <- aggregate(stepsdf2$steps, by=list(stepsdf2$date), sum)
+names(steps_per_day2) <- c("Date", "Total_steps")
+```
+*Create a histogram*  
+
+```r
+g <- ggplot(steps_per_day2, aes(x = Total_steps))
+g + geom_histogram(binwidth = 1000, color = 'black', fill = 'white') + scale_y_discrete(limits = seq(0, 15)) + labs(title = 'Total number of steps per day', x = 'Number of steps taken', y = 'Frequency')
+```
+
+```
+## Warning: Continuous limits supplied to discrete scale.
+## ℹ Did you mean `limits = factor(...)` or `scale_*_continuous()`?
+```
+
+![](PA1_template_files/figure-html/unnamed-chunk-12-1.png)<!-- -->
+  
+*Calculate mean and median*
+
+```r
+cat('Mean:   ', mean(steps_per_day2$Total_steps, na.rm = TRUE), "\n")
+```
+
+```
+## Mean:    10765.64
+```
+
+```r
+cat('Median: ', median(steps_per_day2$Total_steps, na.rm = TRUE))
+```
+
+```
+## Median:  10762
+```
+There are minor differences (without imputation we get a mean of 10766.19 and a median of 10765), but the differences are quite small. It is remarkable that with imputation we get 15 days of 11000 steps, and without only 7.
 ## Are there differences in activity patterns between weekdays and weekends?
+We create a column based on date that contains weekend/weekday as a factor.
+
+```r
+stepsdf2 <- stepsdf2 %>%
+    mutate(Weekday = case_when(
+        strftime(date, format = '%w') %in% c(0,6) ~ 'weekend', 
+        strftime(date, format = '%w') %in% c(seq(1,5)) ~ 'weekday'
+    ))
+stepsdf2$Weekday <- as.factor(stepsdf2$Weekday)
+```
+Now we create a similar plot to what is done in[What is the average daily activity pattern?], but we split the resulting panels based on weekday.  
+
+```r
+steps_per_interval2 <- aggregate(steps ~ interval + Weekday, data = stepsdf2, mean, na.rm = TRUE)
+steps_per_interval2 <- steps_per_interval2 %>%
+    mutate(time = strptime((interval - (interval %% 100)) / 100, format = "%H") + (interval %% 100 * 60))
+
+g <- ggplot(steps_per_interval2, aes(x = time, y = steps))
+g + geom_line() + labs(title = 'Average number of steps by time of day', x = 'Time', y = 'Average number of steps') + scale_x_datetime(date_labels = "%H:%M") + facet_grid(.~Weekday)
+```
+
+![](PA1_template_files/figure-html/unnamed-chunk-15-1.png)<!-- -->
+  
+In this plot we can see side by side that on weekdays there is a spike around 8AM on weekdays that is less prevalent on weekends, while on weekends there is a more consistent activity throughout the day. 
